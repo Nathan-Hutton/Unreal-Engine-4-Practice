@@ -1,0 +1,134 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "GrabberTest.h"
+#include "Components/PrimitiveComponent.h"
+#include "DrawDebugHelpers.h"
+#include "GameFramework/PlayerController.h"
+
+#define OUT
+
+// Sets default values for this component's properties
+UGrabberTest::UGrabberTest()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+}
+
+
+// Called when the game starts
+void UGrabberTest::BeginPlay()
+{
+	Super::BeginPlay();
+
+	FindPhysicsHandle();
+	SetupInputComponent();
+}
+
+void UGrabberTest::FindPhysicsHandle()
+{
+	PhysicsHandle = GetOwner()->FindComponentByClass<UPhysicsHandleComponent>();
+
+	if(!PhysicsHandle)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No physics handle component on %s"), *GetOwner()->GetName());
+	}
+}
+
+void UGrabberTest::SetupInputComponent()
+{
+	InputComponent = GetOwner()->FindComponentByClass<UInputComponent>();
+	InputComponent->BindAction("Grab", IE_Pressed, this, &UGrabberTest::Grab);
+	InputComponent->BindAction("Grab", IE_Released, this, &UGrabberTest::Release);
+}
+
+void UGrabberTest::Grab()
+{
+	FHitResult HitResult = GetFirstPhysicsBodyInReach();
+	UPrimitiveComponent* ComponentToGrab = HitResult.GetComponent();
+	AActor* ActorHit = HitResult.GetActor();
+
+	//If we hit actor then attach physics component
+	if(ActorHit)
+	{
+		if(!PhysicsHandle){return;}
+		if(!TestWeight()) 
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Too fucking big"));
+			return;
+		}
+
+		PhysicsHandle->GrabComponentAtLocation(
+			ComponentToGrab,
+			NAME_None,
+			GetLineTraceEnd()
+		);
+	} 
+}
+
+void UGrabberTest::Release()
+{
+	if(!PhysicsHandle){return;}
+	PhysicsHandle->ReleaseComponent();
+}
+
+void UGrabberTest::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	
+	if(!PhysicsHandle){return;}
+	if(PhysicsHandle->GrabbedComponent)
+	{
+		//move the object we're holding
+		PhysicsHandle->SetTargetLocation(GetLineTraceEnd());
+	}
+
+	DrawDebugLine(
+		GetWorld(),
+		GetPlayerLocation(),
+		GetLineTraceEnd(),
+		FColor(255,0,0),
+		false,
+		0.f,
+		0,
+		.5f
+	);
+
+}
+
+FHitResult UGrabberTest::GetFirstPhysicsBodyInReach() const
+{
+	FHitResult Hit;
+	// Ray-cast out a certain distance (reach)
+	FCollisionQueryParams TraceParams(FName(TEXT("")), false, GetOwner());
+
+	GetWorld()->LineTraceSingleByObjectType(
+		OUT Hit,
+		GetPlayerLocation(),
+		GetLineTraceEnd(),
+		FCollisionObjectQueryParams(ECollisionChannel::ECC_PhysicsBody),
+		TraceParams
+	);
+
+	return Hit;
+}
+
+FVector UGrabberTest::GetLineTraceEnd() const
+{
+	FRotator PlayerRotation = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorRotation();
+	PlayerRotation.Pitch = PlayerRotation.Pitch - 30;
+	return GetPlayerLocation() + PlayerRotation.Vector() * Reach;
+}
+
+FVector UGrabberTest::GetPlayerLocation() const
+{
+	return GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
+}
+
+bool UGrabberTest::TestWeight() const
+{
+	float Mass = GetFirstPhysicsBodyInReach().GetComponent()->GetMass();
+	if(Mass < MaxWeight)
+	{
+		return true;
+	}
+	return false;
+}
